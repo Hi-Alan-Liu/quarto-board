@@ -148,6 +148,26 @@ main{
   background:var(--accent);
   font-weight:900;
 }
+.score{
+  margin-top:12px;
+  padding:12px;
+  border-radius:14px;
+  background:var(--bg-top);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  font-weight:900;
+}
+.scoreBtn{
+  border:none;
+  border-radius:12px;
+  padding:8px 12px;
+  background:var(--accent);
+  font-weight:900;
+  cursor:pointer;
+}
+
 </style>
 </head>
 
@@ -157,6 +177,12 @@ main{
 <main>
   <section class="panel">
     <div class="board" id="board"></div>
+
+    <div class="score" id="score">
+      <div id="scoreText"></div>
+      <button class="scoreBtn" onclick="resetScore()">清除戰績</button>
+    </div>
+
     <div class="status" id="status"></div>
   </section>
 
@@ -351,6 +377,32 @@ function pieceSVG(p, size = 56) {
 </svg>`;
 }
 
+const scoreEl = document.getElementById("score");
+const scoreTextEl = document.getElementById("scoreText");
+
+let score = loadScore();
+
+renderScore();
+
+function loadScore(){
+  try{
+    return JSON.parse(localStorage.getItem("quarto_score")) || { youWin:0, aiWin:0, draw:0 };
+  }catch{
+    return { youWin:0, aiWin:0, draw:0 };
+  }
+}
+function saveScore(){
+  localStorage.setItem("quarto_score", JSON.stringify(score));
+}
+function renderScore(){
+  scoreTextEl.textContent = `戰績｜你 ${score.youWin} 勝 · AI ${score.aiWin} 勝 · ${score.draw} 平手`;
+}
+function resetScore(){
+  score = { youWin:0, aiWin:0, draw:0 };
+  saveScore();
+  renderScore();
+}
+
 function render(){
   boardEl.innerHTML="";
   board.forEach((pid,i)=>{
@@ -374,7 +426,7 @@ function render(){
 function onPiece(id){
   if(gameOver||used[id]||phase!==0)return;
   selected=id;phase=1;
-  statusEl.textContent="AI 正在放置你選的棋子…";
+  statusEl.textContent="事件｜AI 正在放置你選的棋子…";
   setTimeout(aiPlace,400);
   render();
 }
@@ -385,7 +437,7 @@ function onBoard(i){
   lastMoveIndex=i;selected=null;
   render();
   if(checkWin("你"))return;
-  phase=0;statusEl.textContent="請選一顆棋子給 AI";
+  phase=0;statusEl.textContent="戰績｜請選一顆棋子給 AI";
 }
 function estimateDangerAfterPlace(placeIndex){
   const test=[...board];
@@ -501,7 +553,7 @@ function aiSelect(){
 
   selected=pool[0].id;
   phase=3;
-  statusEl.textContent="請把右側被框起來的棋子放上棋盤";
+  statusEl.textContent="事件｜請把右側被框起來的棋子放上棋盤";
   render();
 }
 
@@ -565,6 +617,11 @@ function checkWin(who){
         // 👉 若你有做「勝利線框起來」，可以順便記住
         // winCells = l.slice(0,4);
 
+        if(who === "你") score.youWin++;
+        else if(who === "AI") score.aiWin++;
+        saveScore();
+        renderScore();
+
         showModal(
           `${who} 獲勝 🎉`,
           `
@@ -588,6 +645,9 @@ function checkWin(who){
       "平手 🤝",
       "棋子已全部用完，雙方勢均力敵！"
     );
+    score.draw++;
+    saveScore();
+    renderScore();
     return true;
   }
 
@@ -600,12 +660,12 @@ function resetGame(){
   used=Array(16).fill(false);
   phase=0;selected=null;gameOver=false;
   lastMoveIndex=null;
-  statusEl.textContent="請選一顆棋子給 AI";
+  statusEl.textContent="事件｜請選一顆棋子給 AI";
   rollAIMood();
   render();
 }
 
-statusEl.textContent="請選一顆棋子給 AI";
+statusEl.textContent="事件｜請選一顆棋子給 AI";
 render();
 </script>
 </body>

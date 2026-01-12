@@ -1,0 +1,155 @@
+:root{
+  --bg-top:#fff8f1;
+  --bg-bottom:#f3e6d8;
+  --panel:#ffffff;
+  --board:#fff1dc;
+  --cell:#ffffff;
+  --pink:#ff7ab6;
+  --blue:#6bb7ff;
+  --text:#5a4632;
+  --accent:#ffb703;
+  --overlay:rgba(0,0,0,.4);
+}
+
+body{
+  margin:0;
+  background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));
+  font-family:"Noto Sans TC","Microsoft JhengHei",system-ui;
+  color:var(--text);
+}
+
+header{
+  padding:14px 20px;
+  font-weight:900;
+  background:var(--bg-top);
+}
+
+main{
+  max-width:1100px;
+  margin:auto;
+  padding:16px;
+  display:grid;
+  grid-template-columns:1.1fr .9fr;
+  gap:16px;
+}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+
+.panel{
+  background:var(--panel);
+  border-radius:20px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(0,0,0,.06);
+}
+
+.board{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  padding:14px;
+  background:var(--board);
+  border-radius:18px;
+}
+
+.cell{
+  aspect-ratio:1/1;
+  border-radius:16px;
+  background:var(--cell);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.cell.filled{cursor:default}
+
+/* ✅ 最後一手框線 */
+.cell.last-move{
+  outline:4px solid var(--accent);
+  box-shadow:0 0 0 6px rgba(255,183,3,.35);
+}
+
+.pieces{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+}
+
+.pieceBtn{
+  aspect-ratio:1/1;
+  border-radius:16px;
+  background:#fff;
+  box-shadow:0 6px 12px rgba(0,0,0,.12);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.pieceBtn.used{opacity:.3;cursor:not-allowed}
+.pieceBtn.selected{
+  outline:4px solid var(--accent);
+  box-shadow:0 0 0 6px rgba(255,183,3,.4);
+}
+
+.resetBtn{
+  margin-top:16px;
+  width:100%;
+  padding:12px;
+  border:none;
+  border-radius:16px;
+  background:var(--accent);
+  font-weight:900;
+  cursor:pointer;
+}
+
+.status{
+  margin-top:12px;
+  padding:12px;
+  border-radius:14px;
+  background:var(--bg-top);
+}
+
+/* ✅ 戰績區 */
+.score{
+  margin-top:12px;
+  padding:12px;
+  border-radius:14px;
+  background:var(--bg-top);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  font-weight:900;
+}
+.scoreBtn{
+  border:none;
+  border-radius:12px;
+  padding:8px 12px;
+  background:var(--accent);
+  font-weight:900;
+  cursor:pointer;
+}
+
+.overlay{
+  position:fixed;
+  inset:0;
+  background:var(--overlay);
+  display:none;
+  align-items:center;
+  justify-content:center;
+}
+.overlay.show{display:flex}
+
+.modal{
+  background:#fff;
+  border-radius:24px;
+  padding:24px;
+  width:min(90%,360px);
+  text-align:center;
+}
+.modal button{
+  margin-top:16px;
+  padding:10px 24px;
+  border:none;
+  border-radius:16px;
+  background:var(--accent);
+  font-weight:900;
+  cursor:pointer;
+}

@@ -106,6 +106,7 @@ let phase = 0;
 let selected = null;
 let gameOver = false;
 let lastMoveIndex = null;
+let winCells = [];
 
 /* =========================
    4) DOM
@@ -219,8 +220,9 @@ function render(){
   board.forEach((pid,i)=>{
     const cell = document.createElement("div");
     cell.className = "cell"
-      + (pid!==null ? " filled" : "")
-      + (i===lastMoveIndex ? " last-move" : "");
+    + (pid!==null ? " filled" : "")
+    + (i===lastMoveIndex ? " last-move" : "")
+    + (winCells.includes(i) ? " win" : "");
 
     if(pid !== null) cell.innerHTML = pieceSVG(pieces[pid]);
 
@@ -436,6 +438,8 @@ function checkWin(who){
       if(ps.every(p=>p[attr]===ps[0][attr])){
         gameOver = true;
 
+        winCells = line.slice(0,4);
+
         // ✅ 更新戰績
         if(who === "你") score.youWin++;
         else if(who === "AI") score.aiWin++;
@@ -499,6 +503,7 @@ function resetGame(){
   selected = null;
   gameOver = false;
   lastMoveIndex = null;
+  winCells = [];
 
   rollAIMood(); // ✅ 每局心情不同
   $status.textContent = "事件｜請選一顆棋子給 AI";

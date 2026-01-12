@@ -77,6 +77,7 @@ main{
 }
 .cell.filled{cursor:default}
 
+/* ✅ 最後一手框線 */
 .cell.last-move{
   outline:4px solid var(--accent);
   box-shadow:0 0 0 6px rgba(255,183,3,.35);
@@ -178,6 +179,43 @@ main{
 const pieces=[...Array(16)].map((_,i)=>({
   id:i,color:(i>>3)&1,height:(i>>2)&1,shape:(i>>1)&1,hollow:i&1
 }));
+const AI_PRESET = {
+  chill:  { winProb: 0.85, defenseProb: 0.55, mistakeProb: 0.25, samplePieces: 5,  topK: 5 },
+  normal: { winProb: 0.95, defenseProb: 0.75, mistakeProb: 0.12, samplePieces: 8,  topK: 4 },
+  hard:   { winProb: 1.00, defenseProb: 0.92, mistakeProb: 0.05, samplePieces: 12, topK: 3 },
+};
+
+let AI = { ...AI_PRESET.normal };
+
+function rollAIMood(){
+  const moods = [
+    { name:"serious", defenseBoost:+0.12, mistakeBoost:-0.03 },
+    { name:"playful", defenseBoost:-0.18, mistakeBoost:+0.10 },
+    { name:"chaos",   defenseBoost:-0.30, mistakeBoost:+0.18 },
+  ];
+  const m = moods[(Math.random() * moods.length) | 0];
+  AI._mood = m.name;
+  AI._defense = clamp01(AI.defenseProb + m.defenseBoost);
+  AI._mistake = clamp01(AI.mistakeProb + m.mistakeBoost);
+}
+
+function setDifficulty(name){
+  AI = { ...AI_PRESET[name] };
+  rollAIMood();
+  // 你也可以把這行顯示在 UI 上
+  console.log("AI difficulty:", name, "mood:", AI._mood, AI);
+}
+
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function shuffle(arr){
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j = (Math.random()*(i+1))|0;
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function pickOne(arr){ return arr[(Math.random()*arr.length)|0]; }
 
 let board=Array(16).fill(null);
 let used=Array(16).fill(false);
@@ -349,42 +387,79 @@ function onBoard(i){
   if(checkWin("你"))return;
   phase=0;statusEl.textContent="請選一顆棋子給 AI";
 }
+function estimateDangerAfterPlace(placeIndex){
+  const test=[...board];
+  test[placeIndex]=selected;
+
+  const empties=test.map((v,j)=>v===null?j:null).filter(v=>v!=null);
+
+  // 對手可用棋：抽樣（難度越高 samplePieces 越多）
+  const opponentPiecesAll = pieces.filter(p=>!used[p.id] && p.id!==selected);
+  const opponentPieces = shuffle(opponentPiecesAll).slice(0, Math.min(AI.samplePieces, opponentPiecesAll.length));
+
+  // danger = 抽樣棋中，有幾顆能讓玩家「下一手直接贏」
+  let danger=0;
+  for(const p of opponentPieces){
+    if(empties.some(e=>wouldWin(test, e, p.id))){
+      danger++;
+    }
+  }
+  return danger;
+}
+
+function cellBonus(i){
+  // 小小位置偏好：中心 > 角落 > 其他（讓 AI 看起來比較像人）
+  const center = [5,6,9,10];
+  const corners = [0,3,12,15];
+  if(center.includes(i)) return 2;
+  if(corners.includes(i)) return 1;
+  return 0;
+}
 
 function aiPlace(){
   const empty=board.map((v,i)=>v===null?i:null).filter(v=>v!=null);
 
-  // 1️⃣ AI 能直接贏？
+  // 1) 有立即勝利就「大多數時候」會拿
+  const winningMoves=[];
   for(const i of empty){
-    if(wouldWin(board,i,selected)){
-      placeAt(i);
-      return;
-    }
+    if(wouldWin(board,i,selected)) winningMoves.push(i);
+  }
+  if(winningMoves.length && Math.random() < AI.winProb){
+    placeAt(pickOne(winningMoves));
+    return;
   }
 
-  // 2️⃣ 避免讓玩家下回合必勝的位置
-  const safe=[];
-  for(const i of empty){
-    const test=[...board];
-    test[i]=selected;
+  // 2) 依 danger + 位置偏好 評分
+  const moves = empty.map(i=>{
+    const danger = estimateDangerAfterPlace(i);
+    const bonus = cellBonus(i);
+    return { i, danger, bonus, r: Math.random() };
+  });
 
-    const opponentPieces=pieces.filter(p=>!used[p.id] && p.id!==selected);
-    let danger=false;
+  // defense 機率：不是每次都啟用「超嚴格防守」
+  const defenseOn = Math.random() < (AI._defense ?? AI.defenseProb);
 
-    for(const p of opponentPieces){
-      const empties=test.map((v,j)=>v===null?j:null).filter(v=>v!=null);
-      for(const e of empties){
-        if(wouldWin(test,e,p.id)){
-          danger=true;
-          break;
-        }
-      }
-      if(danger)break;
-    }
-    if(!danger) safe.push(i);
+  moves.sort((a,b)=>{
+    if(defenseOn && a.danger !== b.danger) return a.danger - b.danger; // 越安全越前
+    if(a.bonus !== b.bonus) return b.bonus - a.bonus;                 // 偏好中心/角落
+    return a.r - b.r;                                                 // 打散
+  });
+
+  // 3) TopK 隨機 + 偶爾犯錯（選到更後面）
+  const topK = Math.min(AI.topK, moves.length);
+  const mistake = Math.random() < (AI._mistake ?? AI.mistakeProb);
+
+  let pick;
+  if(!mistake){
+    pick = moves[(Math.random() * topK) | 0];
+  }else{
+    // 往後面挑，製造「有機會漏防」的樂趣
+    const start = topK;
+    const end = Math.min(moves.length, topK + 4);
+    pick = moves[start + ((Math.random() * Math.max(1, end - start)) | 0)] ?? moves[moves.length-1];
   }
 
-  const target=(safe.length?safe:empty)[Math.random()* (safe.length||empty.length) |0];
-  placeAt(target);
+  placeAt(pick.i);
 }
 
 function placeAt(i){
@@ -403,11 +478,13 @@ function placeAt(i){
 function aiSelect(){
   const candidates=pieces.filter(p=>!used[p.id]);
 
+  // 1️⃣ 不給你「一放就贏」的棋
   const safe=candidates.filter(p=>{
     const empties=board.map((v,i)=>v===null?i:null).filter(v=>v!=null);
     return !empties.some(i=>wouldWin(board,i,p.id));
   });
 
+  // 2️⃣ 優先給「屬性分散」的棋
   function score(p){
     let s=0;
     ["color","height","shape","hollow"].forEach(a=>{
@@ -485,7 +562,8 @@ function checkWin(who){
       if(ps.every(p => p[attr] === ps[0][attr])){
         gameOver = true;
 
-        winCells = l.slice(0,4);
+        // 👉 若你有做「勝利線框起來」，可以順便記住
+        // winCells = l.slice(0,4);
 
         showModal(
           `${who} 獲勝 🎉`,
@@ -503,6 +581,7 @@ function checkWin(who){
     }
   }
 
+  // 平手
   if(used.every(v => v)){
     gameOver = true;
     showModal(
@@ -522,6 +601,7 @@ function resetGame(){
   phase=0;selected=null;gameOver=false;
   lastMoveIndex=null;
   statusEl.textContent="請選一顆棋子給 AI";
+  rollAIMood();
   render();
 }
 
@@ -530,4 +610,3 @@ render();
 </script>
 </body>
 </html>
-

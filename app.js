@@ -208,7 +208,7 @@ function badgeText(){
 
 function setStatus(message){
   // 也可以加上 AI 模式顯示：例如 `【AI 回合｜hardcore】...`
-  const mode = AI.deterministic ? "困難困難" : "一般模式";
+  const mode = AI.deterministic ? "困難模式" : "一般模式";
   $status.textContent = `${badgeText()}（${mode}） ${message}`;
 }
 

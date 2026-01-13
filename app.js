@@ -3,6 +3,17 @@
  * - 玩法：你選一顆棋子給 AI 放；AI 再選一顆棋子給你放。
  * - 勝利：同一條線上 4 顆棋子具備任一相同屬性（顏色/高度/形狀/空心）
  * - 戰績：localStorage 保存（清除戰績可歸零）
+ * - UI：回合提示（含小徽章）＋ 勝利線高亮
+ *
+ * ✅ 支援兩套 AI：
+ * - normal：原本放水/有變化（心情、抽樣、TopK 隨機、偶爾犯錯）
+ * - hardcore：能贏就贏（不抽樣、不隨機、不犯錯、強防守）
+ *
+ * 需要的 DOM：
+ * - #board #pieces #status
+ * - #overlay #modalTitle #modalDesc
+ * - #scoreText #btnResetScore #btnResetGame #btnCloseModal
+ * - (可選) #aiMode  (select，value = normal / hardcore)
  */
 
 /* =========================
@@ -10,6 +21,7 @@
    ========================= */
 
 const LS_SCORE_KEY = "quarto_score";
+const LS_AI_KEY = "quarto_ai_mode";
 
 /** 4x4 盤面勝利線（4橫 + 4直 + 2斜） */
 const WIN_LINES = [
@@ -38,10 +50,10 @@ function shuffle(arr){
 
 function pickOne(arr){ return arr[(Math.random()*arr.length)|0]; }
 
-function getEmptyCells(board){
+function getEmptyCells(bd){
   const res = [];
-  for(let i=0;i<board.length;i++){
-    if(board[i] === null) res.push(i);
+  for(let i=0;i<bd.length;i++){
+    if(bd[i] === null) res.push(i);
   }
   return res;
 }
@@ -59,35 +71,60 @@ const pieces = [...Array(16)].map((_,i)=>({
 }));
 
 /* =========================
-   2) AI 難度（含每局心情）
+   2) AI 模式（normal / hardcore）
    ========================= */
 
 const AI_PRESET = {
-  chill:  { winProb: 0.85, defenseProb: 0.55, mistakeProb: 0.25, samplePieces: 5,  topK: 5 },
-  normal: { winProb: 0.95, defenseProb: 0.75, mistakeProb: 0.12, samplePieces: 8,  topK: 4 },
-  hard:   { winProb: 1.00, defenseProb: 0.92, mistakeProb: 0.05, samplePieces: 12, topK: 3 },
+  // ✅ 放水/有變化
+  normal: {
+    winProb: 0.95,
+    defenseProb: 0.75,
+    mistakeProb: 0.12,
+    samplePieces: 8,
+    topK: 4,
+    deterministic: false
+  },
+  // ✅ 能贏就贏（不放水）
+  hardcore: {
+    winProb: 1.00,
+    defenseProb: 1.00,
+    mistakeProb: 0.00,
+    samplePieces: 16,
+    topK: 1,
+    deterministic: true
+  }
 };
 
 let AI = { ...AI_PRESET.normal };
 
-/** 每局隨機一個心情：同樣難度也會有變化 */
+/** 每局隨機一個心情：同樣難度也會有變化（hardcore 不受影響） */
 function rollAIMood(){
+  // Hardcore：鎖死（不放水）
+  if (AI.deterministic) {
+    AI._mood = "locked";
+    AI._defense = 1;
+    AI._mistake = 0;
+    return;
+  }
+
+  // Normal：保留你的心情變化
   const moods = [
     { name:"serious", defenseBoost:+0.12, mistakeBoost:-0.03 },
     { name:"playful", defenseBoost:-0.18, mistakeBoost:+0.10 },
     { name:"chaos",   defenseBoost:-0.30, mistakeBoost:+0.18 },
   ];
-  const m = moods[(Math.random()*moods.length)|0];
+  const m = moods[(Math.random() * moods.length) | 0];
   AI._mood = m.name;
   AI._defense = clamp01(AI.defenseProb + m.defenseBoost);
   AI._mistake = clamp01(AI.mistakeProb + m.mistakeBoost);
 }
 
-/** 你之後若要做 UI 切換難度，呼叫這個即可 */
+/** 切換 AI 模式（normal / hardcore） */
 function setDifficulty(name){
-  AI = { ...AI_PRESET[name] };
+  const key = AI_PRESET[name] ? name : "normal";
+  AI = { ...AI_PRESET[key] };
+  localStorage.setItem(LS_AI_KEY, key);
   rollAIMood();
-  console.log("AI difficulty:", name, "mood:", AI._mood, AI);
 }
 
 /* =========================
@@ -125,6 +162,9 @@ const $btnResetScore = document.getElementById("btnResetScore");
 const $btnResetGame  = document.getElementById("btnResetGame");
 const $btnCloseModal = document.getElementById("btnCloseModal");
 
+// 可選：AI 模式切換（沒有也不會壞）
+const $aiMode = document.getElementById("aiMode");
+
 /* =========================
    5) 戰績（localStorage）
    ========================= */
@@ -156,7 +196,38 @@ function resetScore(){
 }
 
 /* =========================
-   6) SVG 繪製（棋子外觀）
+   6) 回合提示（統一管理 + 小徽章）
+   ========================= */
+
+function badgeText(){
+  if(gameOver) return "【結束】";
+  if(phase === 0 || phase === 3) return "【你的回合】";
+  if(phase === 1 || phase === 2) return "【AI 回合】";
+  return "【提示】";
+}
+
+function setStatus(message){
+  // 也可以加上 AI 模式顯示：例如 `【AI 回合｜hardcore】...`
+  const mode = AI.deterministic ? "困難困難" : "一般模式";
+  $status.textContent = `${badgeText()}（${mode}） ${message}`;
+}
+
+function updateTurnHint(){
+  if(gameOver){
+    setStatus("本局已結束，可按「再來一局」重新開始");
+    return;
+  }
+  switch(phase){
+    case 0: setStatus("請選一顆棋子交給 AI 放置"); break;
+    case 1: setStatus("AI 正在放置你選的棋子…"); break;
+    case 2: setStatus("AI 正在挑選一顆棋子給你…"); break;
+    case 3: setStatus("請把右側「被框起來」的棋子放到棋盤上"); break;
+    default:setStatus("狀態異常，建議按「再來一局」"); break;
+  }
+}
+
+/* =========================
+   7) SVG 繪製（棋子外觀）
    ========================= */
 
 function pieceSVG(p, size = 56) {
@@ -211,7 +282,7 @@ function pieceSVG(p, size = 56) {
 }
 
 /* =========================
-   7) Render（棋盤 / 棋子）
+   8) Render（棋盤 / 棋子）
    ========================= */
 
 function render(){
@@ -220,9 +291,9 @@ function render(){
   board.forEach((pid,i)=>{
     const cell = document.createElement("div");
     cell.className = "cell"
-    + (pid!==null ? " filled" : "")
-    + (i===lastMoveIndex ? " last-move" : "")
-    + (winCells.includes(i) ? " win" : "");
+      + (pid!==null ? " filled" : "")
+      + (i===lastMoveIndex ? " last-move" : "")
+      + (winCells.includes(i) ? " win" : "");
 
     if(pid !== null) cell.innerHTML = pieceSVG(pieces[pid]);
 
@@ -245,7 +316,7 @@ function render(){
 }
 
 /* =========================
-   8) 玩家操作
+   9) 玩家操作
    ========================= */
 
 function onPiece(id){
@@ -253,7 +324,7 @@ function onPiece(id){
 
   selected = id;
   phase = 1;
-  $status.textContent = "事件｜AI 正在放置你選的棋子…";
+  updateTurnHint();
 
   render();
   setTimeout(aiPlace, 400);
@@ -273,12 +344,11 @@ function onBoard(index){
   if(checkWin("你")) return;
 
   phase = 0;
-  $status.textContent = "事件｜請選一顆棋子給 AI";
+  updateTurnHint();
 }
 
 /* =========================
-   9) AI：放置
-   - 仍會贏，但不再每次都完美堵死（有變化）
+   10) AI：放置（normal / hardcore 分流）
    ========================= */
 
 function estimateDangerAfterPlace(placeIndex){
@@ -287,11 +357,14 @@ function estimateDangerAfterPlace(placeIndex){
 
   const empties = getEmptyCells(test);
 
-  // 抽樣玩家可用棋（難度越高 samplePieces 越多）
+  // ✅ hardcore：使用全部可用棋；normal：抽樣
   const oppAll = pieces.filter(p=>!used[p.id] && p.id!==selected);
-  const opp = shuffle(oppAll).slice(0, Math.min(AI.samplePieces, oppAll.length));
+  const opp =
+    (AI.deterministic || AI.samplePieces >= oppAll.length)
+      ? oppAll
+      : shuffle(oppAll).slice(0, Math.min(AI.samplePieces, oppAll.length));
 
-  // danger = 抽樣棋中，有幾顆能讓玩家「下一手直接贏」
+  // danger = 有多少顆「對手拿到後可以下一手直接贏」
   let danger = 0;
   for(const p of opp){
     if(empties.some(e=>wouldWin(test, e, p.id))) danger++;
@@ -308,7 +381,36 @@ function cellBonus(i){
   return 0;
 }
 
-function aiPlace(){
+/** ✅ 不放水：能贏就贏，否則選最安全的（完全 deterministic） */
+function aiPlaceHardcore(){
+  const empty = getEmptyCells(board);
+
+  // 1) 能贏就贏
+  for (const i of empty){
+    if (wouldWin(board, i, selected)) {
+      placeAt(i);
+      return;
+    }
+  }
+
+  // 2) 選最安全的位置
+  const moves = empty.map(i => ({
+    i,
+    danger: estimateDangerAfterPlace(i),
+    bonus: cellBonus(i),
+  }));
+
+  moves.sort((a,b)=>{
+    if (a.danger !== b.danger) return a.danger - b.danger; // 越安全越前
+    if (a.bonus !== b.bonus) return b.bonus - a.bonus;    // 偏好中心/角落
+    return a.i - b.i;                                     // deterministic tie-break
+  });
+
+  placeAt(moves[0].i);
+}
+
+/** ✅ 放水版：保留你原本的變化（TopK 隨機＋偶爾犯錯） */
+function aiPlaceNormal(){
   const empty = getEmptyCells(board);
 
   // 1) AI 有立即勝利：高機率直接拿
@@ -319,14 +421,12 @@ function aiPlace(){
   }
 
   // 2) 位置評分：danger（防守）+ bonus（人味）
-  const moves = empty.map(i=>{
-    return {
-      i,
-      danger: estimateDangerAfterPlace(i),
-      bonus: cellBonus(i),
-      r: Math.random()
-    };
-  });
+  const moves = empty.map(i=>({
+    i,
+    danger: estimateDangerAfterPlace(i),
+    bonus: cellBonus(i),
+    r: Math.random()
+  }));
 
   // 不是每次都開啟「超嚴格防守」
   const defenseOn = Math.random() < (AI._defense ?? AI.defenseProb);
@@ -354,6 +454,11 @@ function aiPlace(){
   placeAt(pick.i);
 }
 
+function aiPlace(){
+  if (AI.deterministic) return aiPlaceHardcore();
+  return aiPlaceNormal();
+}
+
 function placeAt(i){
   board[i] = selected;
   used[selected] = true;
@@ -365,22 +470,67 @@ function placeAt(i){
   if(checkWin("AI")) return;
 
   phase = 2;
+  updateTurnHint();
   setTimeout(aiSelect, 300);
 }
 
 /* =========================
-   10) AI：選棋給玩家
-   - 你可以再加「偶爾送好棋」讓更刺激
+   11) AI：選棋給玩家（normal / hardcore 分流）
    ========================= */
 
-function aiSelect(){
+/** ✅ 不放水：選「讓玩家最難贏」的棋（deterministic） */
+function aiSelectHardcore(){
+  const candidates = pieces.filter(p => !used[p.id]);
+  const empties = getEmptyCells(board);
+
+  // 給你這顆棋，你「下一手」有多少個一放就贏的位置？越少越好
+  function immediateWinCount(pieceId){
+    let c = 0;
+    for(const i of empties){
+      if (wouldWin(board, i, pieceId)) c++;
+    }
+    return c;
+  }
+
+  // 相似度：越像盤面屬性越容易湊線（所以要給你相似度低的）
+  function similarityScore(piece){
+    let s = 0;
+    for(const [a] of ATTRS){
+      const values = board
+        .filter(v => v !== null)
+        .map(id => pieces[id][a]);
+      if(values.includes(piece[a])) s++;
+    }
+    return s;
+  }
+
+  candidates.sort((p1, p2) => {
+    const w1 = immediateWinCount(p1.id);
+    const w2 = immediateWinCount(p2.id);
+    if (w1 !== w2) return w1 - w2;
+
+    const s1 = similarityScore(p1);
+    const s2 = similarityScore(p2);
+    if (s1 !== s2) return s1 - s2;
+
+    return p1.id - p2.id;
+  });
+
+  selected = candidates[0].id;
+  phase = 3;
+  updateTurnHint();
+  render();
+}
+
+/** ✅ 放水版：保留你原本策略（避免一放就贏 + 屬性分散） */
+function aiSelectNormal(){
   const candidates = pieces.filter(p=>!used[p.id]);
   const empties = getEmptyCells(board);
 
-  // 1) 安全棋：避免你一放就贏（你若想更有戲可做機率式放行）
+  // 1) 安全棋：避免你一放就贏（你若想更刺激可做機率式放行）
   const safe = candidates.filter(p => !empties.some(i=>wouldWin(board, i, p.id)));
 
-  // 2) 屬性分散的棋優先（看起來更像在下棋）
+  // 2) 屬性分散的棋優先
   function scorePiece(p){
     let s = 0;
     for(const [a] of ATTRS){
@@ -397,12 +547,17 @@ function aiSelect(){
 
   selected = pool[0].id;
   phase = 3;
-  $status.textContent = "事件｜請把右側被框起來的棋子放上棋盤";
+  updateTurnHint();
   render();
 }
 
+function aiSelect(){
+  if (AI.deterministic) return aiSelectHardcore();
+  return aiSelectNormal();
+}
+
 /* =========================
-   11) 勝負判斷
+   12) 勝負判斷
    ========================= */
 
 function simulateWin(testBoard){
@@ -437,14 +592,15 @@ function checkWin(who){
     for(const [attr, name] of ATTRS){
       if(ps.every(p=>p[attr]===ps[0][attr])){
         gameOver = true;
-
-        winCells = line.slice(0,4);
+        winCells = line.slice(0,4); // ✅ 勝利線高亮
 
         // ✅ 更新戰績
         if(who === "你") score.youWin++;
         else if(who === "AI") score.aiWin++;
         saveScore();
         renderScore();
+
+        updateTurnHint(); // ✅ 避免狀態還顯示「輪到你」
 
         showModal(
           `${who} 獲勝 🎉`,
@@ -470,6 +626,8 @@ function checkWin(who){
     saveScore();
     renderScore();
 
+    updateTurnHint();
+
     showModal("平手 🤝", "棋子已全部用完，雙方勢均力敵！");
     return true;
   }
@@ -478,7 +636,7 @@ function checkWin(who){
 }
 
 /* =========================
-   12) Modal / Reset
+   13) Modal / Reset
    ========================= */
 
 function showModal(title, html){
@@ -505,25 +663,37 @@ function resetGame(){
   lastMoveIndex = null;
   winCells = [];
 
-  rollAIMood(); // ✅ 每局心情不同
-  $status.textContent = "事件｜請選一顆棋子給 AI";
+  rollAIMood(); // ✅ 每局心情不同（hardcore 會 locked）
+  updateTurnHint();
   render();
 }
 
 /* =========================
-   13) 事件綁定與初始化
+   14) 事件綁定與初始化
    ========================= */
 
-$btnResetScore.addEventListener("click", resetScore);
-$btnResetGame.addEventListener("click", resetGame);
-$btnCloseModal.addEventListener("click", closeModal);
+$btnResetScore?.addEventListener("click", resetScore);
+$btnResetGame?.addEventListener("click", resetGame);
+$btnCloseModal?.addEventListener("click", closeModal);
 
 // 點 overlay 黑幕也關閉（可選）
-$overlay.addEventListener("click", (e)=>{
+$overlay?.addEventListener("click", (e)=>{
   if(e.target === $overlay) closeModal();
 });
 
-// 初始
-rollAIMood();
-$status.textContent = "事件｜請選一顆棋子給 AI";
+// AI 模式切換（可選）
+if ($aiMode) {
+  $aiMode.addEventListener("change", () => {
+    setDifficulty($aiMode.value);
+    // 切換模式通常希望直接開新局
+    resetGame();
+  });
+}
+
+// 初始：讀取上次選的 AI 模式（預設 normal）
+const savedMode = localStorage.getItem(LS_AI_KEY) || "normal";
+if ($aiMode) $aiMode.value = savedMode;
+setDifficulty(savedMode);
+
+updateTurnHint();
 render();

@@ -146,6 +146,7 @@ main{
   align-items:center;
   justify-content:center;
 }
+
 .overlay.show{display:flex}
 
 .modal{
@@ -155,6 +156,7 @@ main{
   width:min(90%,360px);
   text-align:center;
 }
+
 .modal button{
   margin-top:16px;
   padding:10px 24px;
@@ -163,4 +165,28 @@ main{
   background:var(--accent);
   font-weight:900;
   cursor:pointer;
+}
+
+.aiBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:10px 0 14px;
+  padding:10px 12px;
+  border-radius:14px;
+  background:var(--bg-top);
+  font-weight:900;
+}
+
+.aiLabel{ white-space:nowrap; }
+#aiMode{
+  width: 100%;
+  max-width: 240px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(0,0,0,.08);
+  background:#fff;
+  font-weight:900;
+  color:var(--text);
 }

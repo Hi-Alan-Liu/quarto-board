@@ -4,8 +4,9 @@
  * - 勝利：同一條線上 4 顆棋子具備任一相同屬性（顏色/高度/形狀/空心）
  * - 戰績：localStorage 保存（清除戰績可歸零）
  * - UI：回合提示（含小徽章）＋ 勝利線高亮
+ * - 計時：本局計時（mm:ss），開局啟動、結束停止、重開歸零
  *
- * ✅ 支援兩套 AI：
+ * 支援兩套 AI：
  * - normal：原本放水/有變化（心情、抽樣、TopK 隨機、偶爾犯錯）
  * - hardcore：能贏就贏（不抽樣、不隨機、不犯錯、強防守）
  *
@@ -13,6 +14,7 @@
  * - #board #pieces #status
  * - #overlay #modalTitle #modalDesc
  * - #scoreText #btnResetScore #btnResetGame #btnCloseModal
+ * - #timerText（本局計時顯示）
  * - (可選) #aiMode  (select，value = normal / hardcore)
  */
 
@@ -162,6 +164,8 @@ const $btnResetScore = document.getElementById("btnResetScore");
 const $btnResetGame  = document.getElementById("btnResetGame");
 const $btnCloseModal = document.getElementById("btnCloseModal");
 
+const $timerText = document.getElementById("timerText");
+
 // 可選：AI 模式切換（沒有也不會壞）
 const $aiMode = document.getElementById("aiMode");
 
@@ -196,6 +200,48 @@ function resetScore(){
 }
 
 /* =========================
+   5.5) 計時器（本局計時）
+   - 開局 startTimer()
+   - 結束 stopTimer()
+   - 新局 resetGame() 會重開
+   ========================= */
+
+let gameStartAt = null; // ms
+let timerId = null;
+let elapsedMs = 0;
+
+function formatMMSS(ms){
+  const totalSec = Math.floor(ms / 1000);
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function renderTimer(){
+  if(!$timerText) return;
+  $timerText.textContent = `本局計時｜${formatMMSS(elapsedMs)}`;
+}
+
+function startTimer(){
+  stopTimer(); // 避免重複啟動
+  gameStartAt = Date.now();
+  elapsedMs = 0;
+  renderTimer();
+
+  timerId = setInterval(() => {
+    elapsedMs = Date.now() - gameStartAt;
+    renderTimer();
+  }, 250);
+}
+
+function stopTimer(){
+  if(timerId){
+    clearInterval(timerId);
+    timerId = null;
+  }
+}
+
+/* =========================
    6) 回合提示（統一管理 + 小徽章）
    ========================= */
 
@@ -207,7 +253,6 @@ function badgeText(){
 }
 
 function setStatus(message){
-  // 也可以加上 AI 模式顯示：例如 `【AI 回合｜hardcore】...`
   const mode = AI.deterministic ? "困難模式" : "一般模式";
   $status.textContent = `${badgeText()}（${mode}） ${message}`;
 }
@@ -373,7 +418,6 @@ function estimateDangerAfterPlace(placeIndex){
 }
 
 function cellBonus(i){
-  // 小小偏好：中心 > 角落 > 其他
   const center = [5,6,9,10];
   const corners = [0,3,12,15];
   if(center.includes(i)) return 2;
@@ -401,9 +445,9 @@ function aiPlaceHardcore(){
   }));
 
   moves.sort((a,b)=>{
-    if (a.danger !== b.danger) return a.danger - b.danger; // 越安全越前
-    if (a.bonus !== b.bonus) return b.bonus - a.bonus;    // 偏好中心/角落
-    return a.i - b.i;                                     // deterministic tie-break
+    if (a.danger !== b.danger) return a.danger - b.danger;
+    if (a.bonus !== b.bonus) return b.bonus - a.bonus;
+    return a.i - b.i;
   });
 
   placeAt(moves[0].i);
@@ -428,16 +472,14 @@ function aiPlaceNormal(){
     r: Math.random()
   }));
 
-  // 不是每次都開啟「超嚴格防守」
   const defenseOn = Math.random() < (AI._defense ?? AI.defenseProb);
 
   moves.sort((a,b)=>{
-    if(defenseOn && a.danger !== b.danger) return a.danger - b.danger; // 越安全越前
-    if(a.bonus !== b.bonus) return b.bonus - a.bonus;                 // 偏好中心/角落
-    return a.r - b.r;                                                 // 隨機打散
+    if(defenseOn && a.danger !== b.danger) return a.danger - b.danger;
+    if(a.bonus !== b.bonus) return b.bonus - a.bonus;
+    return a.r - b.r;
   });
 
-  // 3) TopK 隨機 + 偶爾犯錯
   const topK = Math.min(AI.topK, moves.length);
   const mistake = Math.random() < (AI._mistake ?? AI.mistakeProb);
 
@@ -445,7 +487,6 @@ function aiPlaceNormal(){
   if(!mistake){
     pick = moves[(Math.random()*topK)|0];
   }else{
-    // 往後挑：造成「偶爾漏防」更有趣
     const start = topK;
     const end = Math.min(moves.length, topK + 4);
     pick = moves[start + ((Math.random()*Math.max(1,end-start))|0)] || moves[moves.length-1];
@@ -478,12 +519,10 @@ function placeAt(i){
    11) AI：選棋給玩家（normal / hardcore 分流）
    ========================= */
 
-/** ✅ 不放水：選「讓玩家最難贏」的棋（deterministic） */
 function aiSelectHardcore(){
   const candidates = pieces.filter(p => !used[p.id]);
   const empties = getEmptyCells(board);
 
-  // 給你這顆棋，你「下一手」有多少個一放就贏的位置？越少越好
   function immediateWinCount(pieceId){
     let c = 0;
     for(const i of empties){
@@ -492,7 +531,6 @@ function aiSelectHardcore(){
     return c;
   }
 
-  // 相似度：越像盤面屬性越容易湊線（所以要給你相似度低的）
   function similarityScore(piece){
     let s = 0;
     for(const [a] of ATTRS){
@@ -522,15 +560,12 @@ function aiSelectHardcore(){
   render();
 }
 
-/** ✅ 放水版：保留你原本策略（避免一放就贏 + 屬性分散） */
 function aiSelectNormal(){
   const candidates = pieces.filter(p=>!used[p.id]);
   const empties = getEmptyCells(board);
 
-  // 1) 安全棋：避免你一放就贏（你若想更刺激可做機率式放行）
   const safe = candidates.filter(p => !empties.some(i=>wouldWin(board, i, p.id)));
 
-  // 2) 屬性分散的棋優先
   function scorePiece(p){
     let s = 0;
     for(const [a] of ATTRS){
@@ -592,22 +627,23 @@ function checkWin(who){
     for(const [attr, name] of ATTRS){
       if(ps.every(p=>p[attr]===ps[0][attr])){
         gameOver = true;
-        winCells = line.slice(0,4); // ✅ 勝利線高亮
+        stopTimer(); // ✅ 結束停表
+        winCells = line.slice(0,4);
 
-        // ✅ 更新戰績
         if(who === "你") score.youWin++;
         else if(who === "AI") score.aiWin++;
         saveScore();
         renderScore();
 
-        updateTurnHint(); // ✅ 避免狀態還顯示「輪到你」
+        updateTurnHint();
 
         showModal(
           `${who} 獲勝 🎉`,
           `
             <div style="line-height:1.7">
               <strong>獲勝屬性：</strong>${name}<br>
-              <strong>獲勝位置：</strong>${line[4]}
+              <strong>獲勝位置：</strong>${line[4]}<br>
+              <strong>本局耗時：</strong>${formatMMSS(elapsedMs)}
             </div>
           `
         );
@@ -621,6 +657,7 @@ function checkWin(who){
   // 平手（棋子用完）
   if(used.every(v=>v)){
     gameOver = true;
+    stopTimer(); // ✅ 結束停表
 
     score.draw++;
     saveScore();
@@ -628,7 +665,10 @@ function checkWin(who){
 
     updateTurnHint();
 
-    showModal("平手 🤝", "棋子已全部用完，雙方勢均力敵！");
+    showModal(
+      "平手 🤝",
+      `棋子已全部用完，雙方勢均力敵！<br><strong>本局耗時：</strong>${formatMMSS(elapsedMs)}`
+    );
     return true;
   }
 
@@ -663,9 +703,11 @@ function resetGame(){
   lastMoveIndex = null;
   winCells = [];
 
-  rollAIMood(); // ✅ 每局心情不同（hardcore 會 locked）
+  rollAIMood();
   updateTurnHint();
   render();
+
+  startTimer(); // ✅ 新局開始計時（歸零+跑）
 }
 
 /* =========================
@@ -676,7 +718,6 @@ $btnResetScore?.addEventListener("click", resetScore);
 $btnResetGame?.addEventListener("click", resetGame);
 $btnCloseModal?.addEventListener("click", closeModal);
 
-// 點 overlay 黑幕也關閉（可選）
 $overlay?.addEventListener("click", (e)=>{
   if(e.target === $overlay) closeModal();
 });
@@ -685,8 +726,7 @@ $overlay?.addEventListener("click", (e)=>{
 if ($aiMode) {
   $aiMode.addEventListener("change", () => {
     setDifficulty($aiMode.value);
-    // 切換模式通常希望直接開新局
-    resetGame();
+    resetGame(); // 切換模式直接開新局
   });
 }
 
@@ -697,3 +737,4 @@ setDifficulty(savedMode);
 
 updateTurnHint();
 render();
+startTimer(); // ✅ 一進頁面就開始本局計時

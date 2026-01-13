@@ -190,3 +190,10 @@ main{
   font-weight:900;
   color:var(--text);
 }
+
+#timerText{
+  margin-top:6px;
+  font-weight:700;
+  opacity:.85;
+  font-size:14px;
+}

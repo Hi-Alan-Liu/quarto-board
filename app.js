@@ -281,14 +281,18 @@ function pieceSVG(p, size = 56) {
   const sideDark  = p.color ? "#3a6fa8" : "#d15b93";
   const sideLight = p.color ? "#8fc3ff" : "#ff9fc9";
 
+  // ✅ 兩種形狀共用同一個 viewBox，並對齊同一條地平線：
+  //    「高 / 矮」才會是可以互相比較的視覺差異，高棋子也不會超出邊界被裁切。
+  const GROUND = 90;
+
   // 圓柱
   if (p.shape === 0) {
     const h = p.height ? 64 : 30;
     const cx = 50;
     const rx = 28;
     const ry = 10;
-    const topY = 26;
-    const bottomY = topY + h;
+    const bottomY = GROUND - ry;   // 底部橢圓最低點恰好落在地平線
+    const topY = bottomY - h;
 
     return `
 <svg width="${size}" height="${size}" viewBox="0 0 100 100">
@@ -309,11 +313,11 @@ function pieceSVG(p, size = 56) {
 
   // 立方體
   const HEIGHT = p.height ? 52 : 22;
-  const TOP_Y = 24;
-  const BASE_Y = TOP_Y + HEIGHT;
+  const BASE_Y = GROUND - 14;      // 前方下緣頂點恰好落在地平線
+  const TOP_Y = BASE_Y - HEIGHT;
 
   return `
-<svg width="${size}" height="${size}" viewBox="0 0 100 80">
+<svg width="${size}" height="${size}" viewBox="0 0 100 100">
   <path fill="${topColor}" d="M 20 ${TOP_Y} L 50 ${TOP_Y - 14} L 80 ${TOP_Y} L 50 ${TOP_Y + 14} Z"/>
   <path fill="${sideDark}" d="M 20 ${TOP_Y} L 50 ${TOP_Y + 14} L 50 ${BASE_Y + 14} L 20 ${BASE_Y} Z"/>
   <path fill="${sideLight}" d="M 50 ${TOP_Y + 14} L 80 ${TOP_Y} L 80 ${BASE_Y} L 50 ${BASE_Y + 14} Z"/>

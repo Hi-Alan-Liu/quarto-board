@@ -400,25 +400,51 @@ function onBoard(index){
    10) AI：放置（normal / hardcore 分流）
    ========================= */
 
-function estimateDangerAfterPlace(placeIndex){
+/**
+ * 評估「把 selected 放在 placeIndex」之後的局面。
+ *
+ * ⚠️ 關鍵觀念：AI 放完棋之後，是 AI 自己挑一顆棋交給對手。
+ * 所以「有幾顆棋會讓對手直接獲勝」本身並不危險 —— 只要還剩一顆安全棋，就避得開。
+ * 真正會輸的只有一種情況：剩下的每一顆棋，交出去對手都能立刻獲勝（trapped）。
+ *
+ * 舊版把 danger 的「數量」當成要最小化的目標，會讓 AI 不敢製造任何威脅
+ * （製造威脅必然抬高 danger），結果只會自保、從不進攻。
+ *
+ * @returns {{trapped:boolean, safe:number, danger:number}}
+ *   trapped - 放完之後無棋可安全交出 → 下一手必敗
+ *   safe    - 還有幾顆棋可以安全交給對手
+ *   danger  - 有幾顆棋交出去會讓對手立刻獲勝
+ */
+function evaluatePlace(placeIndex){
   const test = [...board];
   test[placeIndex] = selected;
 
   const empties = getEmptyCells(test);
 
-  // ✅ hardcore：使用全部可用棋；normal：抽樣
-  const oppAll = pieces.filter(p=>!used[p.id] && p.id!==selected);
-  const opp =
-    (AI.deterministic || AI.samplePieces >= oppAll.length)
-      ? oppAll
-      : shuffle(oppAll).slice(0, Math.min(AI.samplePieces, oppAll.length));
+  // 放完這手之後，手上還能交給對手的棋
+  const rest = pieces.filter(p => !used[p.id] && p.id !== selected);
 
-  // danger = 有多少顆「對手拿到後可以下一手直接贏」
-  let danger = 0;
-  for(const p of opp){
-    if(empties.some(e=>wouldWin(test, e, p.id))) danger++;
+  // 棋子剛好用完 → 這手下完就平手，既不安全也不致命
+  if(rest.length === 0){
+    return { trapped:false, safe:0, danger:0 };
   }
-  return danger;
+
+  // hardcore：全部評估；normal：抽樣（維持放水與變化）
+  const pool =
+    (AI.deterministic || AI.samplePieces >= rest.length)
+      ? rest
+      : shuffle(rest).slice(0, Math.min(AI.samplePieces, rest.length));
+
+  let danger = 0;
+  for(const p of pool){
+    if(empties.some(e => wouldWin(test, e, p.id))) danger++;
+  }
+
+  return {
+    trapped: danger === pool.length,
+    safe: pool.length - danger,
+    danger
+  };
 }
 
 function cellBonus(i){
@@ -429,7 +455,7 @@ function cellBonus(i){
   return 0;
 }
 
-/** ✅ 不放水：能贏就贏，否則選最安全的（完全 deterministic） */
+/** ✅ 不放水：能贏就贏，否則走對自己最有利的一手（完全 deterministic） */
 function aiPlaceHardcore(){
   const empty = getEmptyCells(board);
 
@@ -441,15 +467,24 @@ function aiPlaceHardcore(){
     }
   }
 
-  // 2) 選最安全的位置
-  const moves = empty.map(i => ({
-    i,
-    danger: estimateDangerAfterPlace(i),
-    bonus: cellBonus(i),
-  }));
+  // 2) 評估每個位置
+  const moves = empty.map(i => {
+    const ev = evaluatePlace(i);
+    return {
+      i,
+      trapped: ev.trapped ? 1 : 0,
+      safe: ev.safe,
+      bonus: cellBonus(i),
+    };
+  });
 
   moves.sort((a,b)=>{
-    if (a.danger !== b.danger) return a.danger - b.danger;
+    // 2-1) 絕不把自己走進「每顆棋交出去都會輸」的死局
+    if (a.trapped !== b.trapped) return a.trapped - b.trapped;
+    // 2-2) 在安全的前提下，自己剩的安全棋越少越好：
+    //      代表盤面上的威脅越多，輪到對手回送時越容易被逼死。
+    //      （AI 先挑棋，所以那顆僅存的安全棋一定拿得到）
+    if (a.safe !== b.safe) return a.safe - b.safe;
     if (a.bonus !== b.bonus) return b.bonus - a.bonus;
     return a.i - b.i;
   });
@@ -457,7 +492,7 @@ function aiPlaceHardcore(){
   placeAt(moves[0].i);
 }
 
-/** ✅ 放水版：保留你原本的變化（TopK 隨機＋偶爾犯錯） */
+/** ✅ 放水版：會自保但不主動進攻，保留原本的變化（TopK 隨機＋偶爾犯錯） */
 function aiPlaceNormal(){
   const empty = getEmptyCells(board);
 
@@ -468,18 +503,22 @@ function aiPlaceNormal(){
     return;
   }
 
-  // 2) 位置評分：danger（防守）+ bonus（人味）
-  const moves = empty.map(i=>({
-    i,
-    danger: estimateDangerAfterPlace(i),
-    bonus: cellBonus(i),
-    r: Math.random()
-  }));
+  // 2) 位置評分：trapped（防守）+ bonus（人味）
+  const moves = empty.map(i=>{
+    const ev = evaluatePlace(i);
+    return {
+      i,
+      trapped: ev.trapped ? 1 : 0,
+      bonus: cellBonus(i),
+      r: Math.random()
+    };
+  });
 
   const defenseOn = Math.random() < (AI._defense ?? AI.defenseProb);
 
   moves.sort((a,b)=>{
-    if(defenseOn && a.danger !== b.danger) return a.danger - b.danger;
+    // 只避開必敗，不做 hardcore 的「壓縮對手選項」→ 自保但不獵殺
+    if(defenseOn && a.trapped !== b.trapped) return a.trapped - b.trapped;
     if(a.bonus !== b.bonus) return b.bonus - a.bonus;
     return a.r - b.r;
   });

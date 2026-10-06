@@ -226,7 +226,72 @@ main{
 .resetBtn:focus-visible,
 .scoreBtn:focus-visible,
 .modal button:focus-visible,
-#aiMode:focus-visible{
+#aiMode:focus-visible,
+.rules > summary:focus-visible{
   outline:4px solid #2b6ef3;
   outline-offset:3px;
+}
+
+/* =========================
+   規則說明摺疊區
+   ========================= */
+.rules{
+  grid-column:1 / -1;   /* 在 main 的兩欄 grid 中橫跨整列 */
+}
+
+.rules > summary{
+  cursor:pointer;
+  font-weight:900;
+  font-size:16px;
+  list-style:none;
+  border-radius:8px;
+}
+.rules > summary::-webkit-details-marker{ display:none; }
+.rules > summary::before{ content:"▸ "; }
+.rules[open] > summary::before{ content:"▾ "; }
+
+.rulesBody{
+  margin-top:14px;
+  line-height:1.9;
+  font-size:15px;
+}
+.rulesBody p{ margin:10px 0; }
+
+.rulesGoal,
+.rulesKey{
+  padding:10px 14px;
+  border-radius:12px;
+  background:var(--bg-top);
+}
+.rulesKey{ border-left:5px solid var(--accent); }
+
+.rulesAttrs{
+  list-style:none;
+  margin:8px 0;
+  padding:0;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:4px 16px;
+}
+@media(max-width:480px){
+  .rulesAttrs{ grid-template-columns:1fr; }
+}
+
+.rulesFlow{
+  margin:8px 0;
+  padding-left:1.5em;
+}
+
+.rulesTip{
+  font-size:14px;
+  opacity:.9;
+}
+.rulesTip kbd{
+  font-family:inherit;
+  font-size:13px;
+  font-weight:900;
+  padding:2px 7px;
+  border-radius:6px;
+  background:var(--bg-bottom);
+  box-shadow:0 1px 0 rgba(0,0,0,.15);
 }

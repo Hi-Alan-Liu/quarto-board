@@ -24,6 +24,7 @@
 
 const LS_SCORE_KEY = "quarto_score";
 const LS_AI_KEY = "quarto_ai_mode";
+const LS_RULES_KEY = "quarto_rules_open";
 
 /** 4x4 盤面勝利線（4橫 + 4直 + 2斜） */
 const WIN_LINES = [
@@ -191,6 +192,9 @@ const $timerText = document.getElementById("timerText");
 
 // 可選：AI 模式切換（沒有也不會壞）
 const $aiMode = document.getElementById("aiMode");
+
+// 規則說明摺疊區
+const $rules = document.getElementById("rules");
 
 /**
  * 使用者現在是用鍵盤還是滑鼠？
@@ -859,8 +863,23 @@ render();
 startTimer(); // ✅ 一進頁面就開始本局計時
 
 /* =========================
-   15) 鍵盤無障礙
+   15) 規則說明 / 鍵盤無障礙
    ========================= */
+
+/** localStorage 在無痕模式會丟異常，這裡一律包起來 */
+function lsSet(key, value){
+  try{ localStorage.setItem(key, value); }catch{ /* 忽略：不影響遊戲 */ }
+}
+
+// 規則區塊：第一次造訪預設展開，之後記住使用者的選擇
+if ($rules) {
+  let saved = null;
+  try{ saved = localStorage.getItem(LS_RULES_KEY); }catch{ saved = null; }
+  $rules.open = (saved === null) ? true : (saved === "1");
+  $rules.addEventListener("toggle", () => {
+    lsSet(LS_RULES_KEY, $rules.open ? "1" : "0");
+  });
+}
 
 // 結果彈窗：開啟時把焦點移到 OK，並支援 Esc 關閉
 // （否則只用鍵盤的人每局結束都會被困在彈窗裡）

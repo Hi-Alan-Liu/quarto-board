@@ -22,6 +22,45 @@
   <header>Quarto｜可愛 2.5D 版（你 vs AI）</header>
 
   <main>
+    <details class="panel rules" id="rules">
+      <summary>📖 第一次玩？先看遊戲規則</summary>
+
+      <div class="rulesBody">
+        <p class="rulesGoal">
+          <strong>目標</strong>：讓同一條線（橫／直／斜）上的 4 顆棋子，
+          擁有<strong>任何一個</strong>共同屬性。
+        </p>
+
+        <p>16 顆棋子各不相同，每顆都有 4 組屬性：</p>
+        <ul class="rulesAttrs">
+          <li><strong>顏色</strong>　粉紅 / 粉藍</li>
+          <li><strong>高度</strong>　高 / 矮</li>
+          <li><strong>形狀</strong>　圓柱 / 方塊</li>
+          <li><strong>結構</strong>　中空 / 實心</li>
+        </ul>
+
+        <p class="rulesKey">
+          ⚠️ 關鍵：棋子<strong>不是自己挑的，是對手指定給你的</strong>。
+        </p>
+        <ol class="rulesFlow">
+          <li>你挑一顆棋子交給 AI</li>
+          <li>AI 把它放到棋盤上</li>
+          <li>AI 挑一顆棋子交給你（右側會被框起來）</li>
+          <li>你把它放到任一空格</li>
+        </ol>
+
+        <p>
+          <strong>完成那條線的人獲勝</strong>，不管棋子是誰挑的。
+          所以「要交出哪顆棋」通常比「放在哪裡」更重要 —— 送錯一顆就等於直接送分。
+          棋子用完仍無人連線則平手。
+        </p>
+
+        <p class="rulesTip">
+          💡 只用鍵盤也能玩：<kbd>Tab</kbd> 移動、<kbd>Enter</kbd> 選取、<kbd>Esc</kbd> 關閉結果視窗。
+        </p>
+      </div>
+    </details>
+
     <section class="panel">
       <div class="board" id="board" role="group" aria-label="棋盤，4 乘 4"></div>
 

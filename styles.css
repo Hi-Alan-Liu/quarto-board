@@ -197,3 +197,36 @@ main{
   opacity:.85;
   font-size:14px;
 }
+
+/* =========================
+   無障礙：棋格與棋子改用 <button>
+   需要清掉瀏覽器預設樣式，並補一個「看得見」的鍵盤焦點框
+   ========================= */
+.cell,
+.pieceBtn{
+  border:none;
+  padding:0;
+  font:inherit;
+  color:inherit;
+  text-align:inherit;
+  -webkit-appearance:none;
+  appearance:none;
+}
+
+/* 不可操作時不要顯示手指游標（但不改透明度：
+   AI 回合時全盤都是 disabled，整體變淡會很突兀） */
+.cell:disabled,
+.pieceBtn:disabled{ cursor:default; }
+.pieceBtn.used{ cursor:not-allowed; }
+
+/* 鍵盤焦點：刻意用藍色，才不會和「最後一手 / 勝利線」的黃框混淆。
+   必須放在 .last-move / .win 之後，同權重時由後者勝出。 */
+.cell:focus-visible,
+.pieceBtn:focus-visible,
+.resetBtn:focus-visible,
+.scoreBtn:focus-visible,
+.modal button:focus-visible,
+#aiMode:focus-visible{
+  outline:4px solid #2b6ef3;
+  outline-offset:3px;
+}

@@ -23,7 +23,7 @@
 
   <main>
     <section class="panel">
-      <div class="board" id="board"></div>
+      <div class="board" id="board" role="group" aria-label="棋盤，4 乘 4"></div>
 
       <div class="score">
         <div id="scoreText">戰績｜你 0 勝 · AI 0 勝 · 0 平手</div>
@@ -31,7 +31,7 @@
         <button class="scoreBtn" id="btnResetScore" type="button">清除戰績</button>
       </div>
 
-      <div class="status" id="status"></div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
     </section>
 
     <section class="panel">
@@ -43,7 +43,7 @@
           <option value="hardcore">困難模式</option>
         </select>
       </div>
-      <div class="pieces" id="pieces"></div>
+      <div class="pieces" id="pieces" role="group" aria-label="可選棋子，共 16 顆"></div>
       <button class="resetBtn" id="btnResetGame" type="button">再來一局</button>
     </section>
   </main>

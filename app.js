@@ -39,6 +39,29 @@ const ATTRS = [
   ["hollow","空心 / 實心"],
 ];
 
+/** 屬性的文字說明（給 aria-label / title 用，索引 = 屬性值 0/1） */
+const ATTR_LABELS = {
+  color:  ["粉紅", "粉藍"],
+  height: ["矮",   "高"],
+  shape:  ["圓柱", "方塊"],
+  hollow: ["實心", "中空"],
+};
+
+/** 把一顆棋子描述成文字，例如「粉藍 高 方塊 中空」 */
+function pieceLabel(p){
+  return [
+    ATTR_LABELS.color[p.color],
+    ATTR_LABELS.height[p.height],
+    ATTR_LABELS.shape[p.shape],
+    ATTR_LABELS.hollow[p.hollow],
+  ].join(" ");
+}
+
+/** 棋盤格的位置描述，例如「第2列第3行」 */
+function cellLabel(i){
+  return `第${Math.floor(i/4)+1}列第${(i%4)+1}行`;
+}
+
 function clamp01(x){ return Math.max(0, Math.min(1, x)); }
 
 function shuffle(arr){
@@ -169,6 +192,17 @@ const $timerText = document.getElementById("timerText");
 // 可選：AI 模式切換（沒有也不會壞）
 const $aiMode = document.getElementById("aiMode");
 
+/**
+ * 使用者現在是用鍵盤還是滑鼠？
+ * 只有鍵盤使用者需要在重繪後把焦點接回來；滑鼠使用者被移動焦點會莫名其妙。
+ * 判斷方式與 :focus-visible 一致：看最後一次輸入是鍵盤還是指標。
+ */
+let keyboardActive = false;
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Tab" || e.key === "Enter" || e.key === " ") keyboardActive = true;
+});
+document.addEventListener("pointerdown", () => { keyboardActive = false; });
+
 /* =========================
    5) 戰績（localStorage）
    ========================= */
@@ -295,7 +329,7 @@ function pieceSVG(p, size = 56) {
     const topY = bottomY - h;
 
     return `
-<svg width="${size}" height="${size}" viewBox="0 0 100 100">
+<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
   <path fill="${bodyColor}" d="M ${cx - rx},${topY} A ${rx},${ry} 0 0 0 ${cx + rx},${topY}
                               L ${cx + rx},${bottomY}
                               A ${rx},${ry} 0 0 1 ${cx - rx},${bottomY} Z"/>
@@ -317,7 +351,7 @@ function pieceSVG(p, size = 56) {
   const TOP_Y = BASE_Y - HEIGHT;
 
   return `
-<svg width="${size}" height="${size}" viewBox="0 0 100 100">
+<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
   <path fill="${topColor}" d="M 20 ${TOP_Y} L 50 ${TOP_Y - 14} L 80 ${TOP_Y} L 50 ${TOP_Y + 14} Z"/>
   <path fill="${sideDark}" d="M 20 ${TOP_Y} L 50 ${TOP_Y + 14} L 50 ${BASE_Y + 14} L 20 ${BASE_Y} Z"/>
   <path fill="${sideLight}" d="M 50 ${TOP_Y + 14} L 80 ${TOP_Y} L 80 ${BASE_Y} L 50 ${BASE_Y + 14} Z"/>
@@ -338,13 +372,26 @@ function render(){
   // 棋盤
   $board.innerHTML = "";
   board.forEach((pid,i)=>{
-    const cell = document.createElement("div");
+    const cell = document.createElement("button");
+    cell.type = "button";
     cell.className = "cell"
       + (pid!==null ? " filled" : "")
       + (i===lastMoveIndex ? " last-move" : "")
       + (winCells.includes(i) ? " win" : "");
 
     if(pid !== null) cell.innerHTML = pieceSVG(pieces[pid]);
+
+    // 無障礙：格子念出「位置 + 內容」
+    const desc = pid !== null
+      ? `${cellLabel(i)}，${pieceLabel(pieces[pid])}`
+      : `${cellLabel(i)}，空格`;
+    cell.setAttribute("aria-label", desc
+      + (i===lastMoveIndex ? "，最後一手" : "")
+      + (winCells.includes(i) ? "，勝利線" : ""));
+    cell.title = desc;
+
+    // 只有「玩家放棋」階段的空格可以按
+    cell.disabled = gameOver || phase !== 3 || pid !== null;
 
     cell.addEventListener("click", ()=>onBoard(i));
     $board.appendChild(cell);
@@ -353,15 +400,38 @@ function render(){
   // 棋子池
   $pieces.innerHTML = "";
   pieces.forEach(p=>{
-    const btn = document.createElement("div");
+    const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "pieceBtn"
       + (used[p.id] ? " used" : "")
       + (p.id===selected ? " selected" : "");
 
     btn.innerHTML = pieceSVG(p);
+
+    // 無障礙：棋子念出 4 個屬性，顏色之外也聽得出差異
+    let desc = pieceLabel(p);
+    if(used[p.id]) desc += "（已放到棋盤上）";
+    else if(p.id === selected) desc += "（AI 指定給你的棋子）";
+    btn.setAttribute("aria-label", desc);
+    btn.title = desc;
+
+    // 只有「玩家選棋給 AI」階段的未使用棋子可以按
+    btn.disabled = gameOver || used[p.id] || phase !== 0;
+
     btn.addEventListener("click", ()=>onPiece(p.id));
     $pieces.appendChild(btn);
   });
+
+  // 每次重繪都會銷毀原本聚焦的元素，AI 回合期間更會連續重繪好幾次。
+  // 只有鍵盤使用者需要把焦點接回來，否則他每一手都得重新 Tab 一輪。
+  if(keyboardActive && !gameOver) restoreFocus();
+}
+
+/** 把焦點移到現在真正能操作的區域（preventScroll：不要把畫面捲走） */
+function restoreFocus(){
+  const zone = phase === 3 ? $board : $pieces;
+  const target = zone.querySelector("button:not([disabled])");
+  if(target) target.focus({ preventScroll:true });
 }
 
 /* =========================
@@ -388,12 +458,17 @@ function onBoard(index){
   lastMoveIndex = index;
   selected = null;
 
-  render();
-
-  if(checkWin("你")) return;
+  // ⚠️ 順序很重要：棋格/棋子的 disabled 是依 phase 計算的，
+  //    所以一定要先更新 phase 再 render()，否則玩家放完棋之後
+  //    棋子區會維持上一個 phase 的 disabled 狀態而整盤鎖死。
+  if(checkWin("你")){
+    render();   // 勝負已定（含平手）：確保最後一手畫得出來
+    return;
+  }
 
   phase = 0;
   updateTurnHint();
+  render();
 }
 
 /* =========================
@@ -727,6 +802,7 @@ function showModal(title, html){
   $modalDesc.innerHTML = html;
   $overlay.classList.add("show");
   $overlay.setAttribute("aria-hidden", "false");
+  $btnCloseModal?.focus(); // 鍵盤使用者可直接按 Enter 關閉
 }
 
 function closeModal(){
@@ -781,3 +857,15 @@ setDifficulty(savedMode);
 updateTurnHint();
 render();
 startTimer(); // ✅ 一進頁面就開始本局計時
+
+/* =========================
+   15) 鍵盤無障礙
+   ========================= */
+
+// 結果彈窗：開啟時把焦點移到 OK，並支援 Esc 關閉
+// （否則只用鍵盤的人每局結束都會被困在彈窗裡）
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && $overlay?.classList.contains("show")){
+    closeModal();
+  }
+});
